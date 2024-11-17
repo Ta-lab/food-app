@@ -165,6 +165,7 @@ const CustomerList = () => {
                             console.log('Data synced:', item.content);
                             await db.delete('unsynced-data-food', item.id);
                             console.log('Data deleted from IndexedDB:', item.id);
+                            fetchCustomers();
                         } else {
                             console.error('Failed to sync:', response.status);
                         }
