@@ -21,6 +21,8 @@ import {
 import axios from "axios";
 import { useDropzone } from "react-dropzone";
 
+import { getDB } from '../../utils/db';
+
 const FoodItemList = () => {
     const [foodItems, setFoodItems] = useState([]);
     const [modal, setModal] = useState(false);
@@ -37,7 +39,7 @@ const FoodItemList = () => {
         try {
             const response = await axios.get("/api/foods/food-items");
             const foodItems = response.map(item => {
-                item.image = `${process.env.REACT_APP_API_URL}/${item.image.replace(/\\/g, '/')}`;
+                item.image = `${process.env.REACT_APP_API_URL}/${item?.image?.replace(/\\/g, '/')}`;
                 return item;
             });
             setFoodItems(foodItems);
@@ -63,49 +65,78 @@ const FoodItemList = () => {
         },
     });
 
-    const handleSubmit = async (e) => {
-        if (navigator.onLine) {
-            e.preventDefault();
-            const formData = new FormData();
-            formData.append("name", e.target.name.value);
-            formData.append("cost", e.target.cost.value);
-            formData.append("ingredients", e.target.ingredients.value);
-
-            // Check if a new file is selected
-            if (selectedFile) {
-                formData.append("image", selectedFile);
-            } else {
-                console.log("image - 1", currentFoodItem)
-                formData.append("image", currentFoodItem.image);
-            }
-
+    useEffect(() => {
+        const syncData = async () => {
             try {
-                if (isEdit) {
-                    await axios.put(`/api/foods/food-items/${currentFoodItem.id}`, formData, {
-                        headers: { "Content-Type": "multipart/form-data" },
-                    });
-                } else {
-                    await axios.post("/api/foods/food-items", formData, {
-                        headers: { "Content-Type": "multipart/form-data" },
-                    });
-                }
-                setModal(false);
-                fetchFoodItems();
-            } catch (err) {
-                console.error("Error saving food item:", err);
-            }
-        } else {
-            e.preventDefault();
-            const formData = new FormData();
-            formData.append("name", e.target.name.value);
-            formData.append("cost", e.target.cost.value);
-            formData.append("ingredients", e.target.ingredients.value);
+                console.log('Starting sync process...');
+                const db = await getDB();
+                console.log('IndexedDB initialized.');
+                const unsyncedData = await db.getAll('unsynced-data-items');
+                console.log('Unsynced data retrieved:', unsyncedData);
 
-            if (selectedFile) {
-                formData.append("image", selectedFile);
-            } else {
-                formData.append("image", currentFoodItem.image);
+                for (const item of unsyncedData) {
+                    console.log('Syncing item:', item);
+                    try {
+                        const response = await axios.post(`${process.env.REACT_APP_API_URL}/api/foods/sync`, { data: item.content });
+                        if (response.status === 200) {
+                            console.log('Data synced:', item.content);
+                            await db.delete('unsynced-data-items', item.key);
+                            console.log('Data deleted from IndexedDB:', item.key);
+                            fetchFoodItems();
+                        } else {
+                            console.error('Failed to sync:', response.status);
+                        }
+                    } catch (err) {
+                        console.error('Error syncing data:', err);
+                    }
+                }
+            } catch (err) {
+                console.error('Error accessing IndexedDB:', err);
             }
+        };
+
+        // Start sync on coming back online
+        window.addEventListener('online', syncData);
+
+        return () => window.removeEventListener('online', syncData);
+    }, []);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault(); // Prevent form's default submit behavior
+
+        const newFoodItem = {
+            name: e.target.name.value,
+            cost: e.target.cost.value,
+            ingredients: e.target.ingredients.value,
+            image: selectedFile || (isEdit ? currentFoodItem.image : null), // Handle new or existing image
+        };
+
+        try {
+            if (isEdit) {
+                await axios.put(`/api/foods/food-items/${currentFoodItem.id}`, newFoodItem, {
+                    headers: { "Content-Type": "multipart/form-data" },
+                });
+                console.log('Food item updated on server');
+            } else {
+                await axios.post("/api/foods/food-items", newFoodItem, {
+                    headers: { "Content-Type": "multipart/form-data" },
+                });
+                console.log('New food item added to server');
+            }
+            toggleModal();
+            fetchFoodItems();
+        } catch (error) {
+            console.error('Error handling food item:', error);
+            const db = await getDB();
+            const unsyncedData = {
+                content: newFoodItem,
+                isEdit,
+                id: isEdit ? currentFoodItem.id : null,
+            };
+            console.log("data",unsyncedData)
+            await db.add('unsynced-data-items', { content: unsyncedData });
+            console.log('Data saved offline due to error');
+            toggleModal();
         }
     };
 

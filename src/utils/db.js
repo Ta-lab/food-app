@@ -6,6 +6,11 @@ export const getDB = async () => {
       if (!db.objectStoreNames.contains('unsynced-data-food')) {
         db.createObjectStore('unsynced-data-food', { keyPath: 'id', autoIncrement: true });
       }
+
+      if (!db.objectStoreNames.contains('unsynced-data-items')) {
+        db.createObjectStore('unsynced-data-items', { keyPath: 'id', autoIncrement: true });
+      }
+
     },
   });
 };
