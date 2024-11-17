@@ -21,8 +21,6 @@ import {
 import axios from "axios";
 import { useDropzone } from "react-dropzone";
 
-import { saveOfflineChanges } from '../../services/offlineSync';
-
 const FoodItemList = () => {
     const [foodItems, setFoodItems] = useState([]);
     const [modal, setModal] = useState(false);
@@ -39,7 +37,7 @@ const FoodItemList = () => {
         try {
             const response = await axios.get("/api/foods/food-items");
             const foodItems = response.map(item => {
-                item.image = `http://localhost:5000/${item.image.replace(/\\/g, '/')}`;
+                item.image = `${process.env.REACT_APP_API_URL}/${item.image.replace(/\\/g, '/')}`;
                 return item;
             });
             setFoodItems(foodItems);
@@ -78,8 +76,7 @@ const FoodItemList = () => {
                 formData.append("image", selectedFile);
             } else {
                 console.log("image - 1", currentFoodItem)
-                // If no file is selected, retain the current image URL
-                formData.append("image", currentFoodItem.image); // pass the existing image URL
+                formData.append("image", currentFoodItem.image);
             }
 
             try {
@@ -104,15 +101,11 @@ const FoodItemList = () => {
             formData.append("cost", e.target.cost.value);
             formData.append("ingredients", e.target.ingredients.value);
 
-            // Check if a new file is selected
             if (selectedFile) {
                 formData.append("image", selectedFile);
             } else {
-                console.log("image - 1", currentFoodItem)
-                formData.append("image", currentFoodItem.image); // pass the existing image URL
+                formData.append("image", currentFoodItem.image);
             }
-            console.log("formdata", currentFoodItem ? currentFoodItem : formData)
-            saveOfflineChanges(currentFoodItem ? currentFoodItem : formData);
         }
     };
 
@@ -125,10 +118,6 @@ const FoodItemList = () => {
 
 
     const handleEdit = (foodItem) => {
-
-        console.log("food", foodItem)
-        console.log("food", currentFoodItem.image)
-
         setIsEdit(true);
         setCurrentFoodItem(foodItem);
         setImageUrl(foodItem.image);

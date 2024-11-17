@@ -21,6 +21,8 @@ import {
 
 import TableContainerReactTable from "../../Components/Common/TableContainerReactTable";
 
+import { getDB } from '../../utils/db';
+
 const CustomerList = () => {
     const [customers, setCustomers] = useState([]);
     const [modal, setModal] = useState(false);
@@ -35,8 +37,7 @@ const CustomerList = () => {
     const toggleModalDelete = () => setModalDelete(!modalDelete);
 
     const handleDelete = (customerId) => {
-        console.log("handle delete", customerId)
-        // Set the customer ID to be deleted and open the confirmation modal
+        // console.log("handle delete", customerId)
         setCustomerIdToDelete(customerId);
         toggleModalDelete();
     };
@@ -44,8 +45,8 @@ const CustomerList = () => {
 
     const fetchCustomers = async () => {
         try {
-            const response = await axios.get("/api/customers"); // Replace with actual API
-            setCustomers(response.customers); // Assuming response contains an array of customers
+            const response = await axios.get("/api/customers");
+            setCustomers(response.customers);
             setLoading(false);
         } catch (err) {
             console.error('Error fetching customers:', err);
@@ -63,35 +64,34 @@ const CustomerList = () => {
     const columns = useMemo(
         () => [
             {
-                id: "sno", // Add an 'id' field for the column
-                Header: "S.No", // Serial Number header
+                id: "sno",
+                Header: "S.No",
                 Cell: (cellProps) => {
-                    // Here we calculate the serial number based on the row index
-                    return cellProps.row.index + 1;  // Adding 1 to make it 1-based
+                    return cellProps.row.index + 1;
                 }
             },
             {
-                id: "name", // Add an 'id' field for the column
+                id: "name",
                 Header: "Customer",
                 accessor: "name",
             },
             {
-                id: "email", // Add an 'id' field for the column
+                id: "email",
                 Header: "Email",
                 accessor: "email",
             },
             {
-                id: "phone", // Add an 'id' field for the column
+                id: "phone",
                 Header: "Phone",
                 accessor: "phone",
             },
             {
-                id: "address", // Add an 'id' field for the column
+                id: "address",
                 Header: "Address",
                 accessor: "address",
             },
             {
-                id: "action", // Add an 'id' field for the column
+                id: "action",
                 Header: "Action",
                 Cell: (cellProps) => (
                     <ul className="list-inline hstack gap-2 mb-0">
@@ -133,12 +133,10 @@ const CustomerList = () => {
     };
 
     const confirmDelete = () => {
-
-        console.log("custid", customerIdToDelete);
-
+        // console.log("custid", customerIdToDelete);
         axios.delete(`/api/customers/delete/${customerIdToDelete}`)
             .then(() => {
-                toggleModalDelete();  // Close modal after submit
+                toggleModalDelete();
                 fetchCustomers();
             })
             .catch(err => {
@@ -150,38 +148,77 @@ const CustomerList = () => {
         toggleModalDelete();
     };
 
-    const handleSubmit = (e) => {
+    useEffect(() => {
+        const syncData = async () => {
+            try {
+                console.log('Starting sync process...');
+                const db = await getDB();
+                console.log('IndexedDB initialized.');
+                const unsyncedData = await db.getAll('unsynced-data-food');
+                console.log('Unsynced data retrieved:', unsyncedData);
+
+                for (const item of unsyncedData) {
+                    console.log('Syncing item:', item);
+                    try {
+                        const response = await axios.post(`${process.env.REACT_APP_API_URL}/api/customers/sync`, { data: item.content });
+                        if (response.status === 200) {
+                            console.log('Data synced:', item.content);
+                            await db.delete('unsynced-data-food', item.id);
+                            console.log('Data deleted from IndexedDB:', item.id);
+                        } else {
+                            console.error('Failed to sync:', response.status);
+                        }
+                    } catch (err) {
+                        console.error('Error syncing data:', err);
+                    }
+                }
+            } catch (err) {
+                console.error('Error accessing IndexedDB:', err);
+            }
+        };
+
+        // Start sync on coming back online
+        window.addEventListener('online', syncData);
+
+        return () => window.removeEventListener('online', syncData);
+    }, []);
+
+
+    const handleSubmit = async (e) => {
         e.preventDefault();
 
         const newCustomer = {
             name: e.target.customerName.value,
             email: e.target.email.value,
             phone: e.target.phone.value,
-            address: e.target.address.value
+            address: e.target.address.value,
         };
 
-        if (isEdit) {
-            // Edit customer
-            axios.put(`/api/customers/update/${currentCustomer.id}`, newCustomer)
-                .then((response) => {
-                    toggleModal();  // Close modal after submit
-                    fetchCustomers();
-                })
-                .catch((err) => {
-                    console.error("Error editing customer:", err);
-                });
-        } else {
-            // Add new customer
-            axios.post("/api/customers/create", newCustomer)
-                .then((response) => {
-                    console.log("response", response)
-                    toggleModal();  // Close modal after submit
-                    fetchCustomers();
+        try {
+            if (isEdit) {
+                // Try editing customer on the server
+                await axios.put(`/api/customers/update/${currentCustomer.id}`, newCustomer);
+                console.log('Customer updated on server');
+            } else {
+                // Try adding new customer to the server
+                await axios.post("/api/customers/create", newCustomer);
+                console.log('New customer added to server');
+            }
+            toggleModal();  // Close modal
+            fetchCustomers();  // Refresh the customer list
+        } catch (error) {
+            console.error('Error syncing to server:', error);
+            // console.log('Saving data offline');
 
-                })
-                .catch((err) => {
-                    console.error("Error adding customer:", err);
-                });
+            const db = await getDB();
+            const unsyncedData = {
+                content: newCustomer,
+                isEdit,
+                id: isEdit ? currentCustomer.id : null,
+            };
+            await db.add('unsynced-data-food', { content: unsyncedData });
+            console.log('Data saved offline for later sync');
+            toggleModal();
         }
     };
 
@@ -234,7 +271,6 @@ const CustomerList = () => {
                                             SearchPlaceholder="Search..."
                                         />
                                     )}
-                                    
                                 </div>
                             </Card>
                         </Col>
@@ -304,8 +340,6 @@ const CustomerList = () => {
                     </Form>
                 </Modal>
 
-
-
                 {/* Custom Confirmation Modal */}
                 <Modal isOpen={modalDelete} toggle={toggleModalDelete}>
                     <ModalHeader toggle={toggleModalDelete}>Confirm Deletion</ModalHeader>
@@ -317,7 +351,6 @@ const CustomerList = () => {
                         <Button color="danger" onClick={confirmDelete}>Delete</Button>
                     </ModalFooter>
                 </Modal>
-
 
             </div>
         </React.Fragment>

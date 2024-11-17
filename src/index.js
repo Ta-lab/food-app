@@ -7,9 +7,6 @@ import { Provider } from "react-redux";
 import { configureStore } from "@reduxjs/toolkit";
 import rootReducer from "./slices";
 
-import { register } from './serviceWorkerRegistration';
-
-
 const store = configureStore({ reducer: rootReducer, devTools: true });
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
@@ -26,7 +23,28 @@ root.render(
 
 
 
-register();
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker
+    .register('/service-worker.js')
+    .then((registration) => {
+      console.log('ServiceWorker registered with scope:', registration.scope);
+      registration.onupdatefound = () => {
+        const installingWorker = registration.installing;
+        installingWorker.onstatechange = () => {
+          if (installingWorker.state === 'activated') {
+            console.log('New ServiceWorker activated. Reloading page...');
+            window.location.reload();
+          }
+        };
+      };
+    })
+    .catch((error) => {
+      console.error('ServiceWorker registration failed:', error);
+    });
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    registrations.forEach((registration) => registration.unregister());
+  });
+}
 
 // If you want to start measuring performance in your app, pass a function
 // to log results (for example: reportWebVitals(console.log))

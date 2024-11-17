@@ -35,6 +35,6 @@ function App() {
       <Route />
     </React.Fragment>
   );
-}
+};
 
 export default App;
